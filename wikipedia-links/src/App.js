@@ -1,22 +1,27 @@
-import logo from './logo.svg';
-import './App.css';
+import React from "react";
+import "./App.css";
 
 function App() {
+  const [pageOne, onChangePageOne] = React.useState("");
+  const [pageTwo, onChangePageTwo] = React.useState("");
+
   return (
     <div className="App">
       <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
+        <p>Find out how many links there are</p>
+        <p>From</p>
+        <input
+          type="text"
+          value={pageOne}
+          onChange={(e) => onChangePageOne(e.target.value)}
+        ></input>
+        <p>To</p>
+        <input
+          type="text"
+          value={pageTwo}
+          onChange={(e) => onChangePageTwo(e.target.value)}
+        ></input>
+        <button>Search!</button>
       </header>
     </div>
   );
