@@ -1,6 +1,6 @@
 import React from "react";
 import "./App.css";
-
+import breadthFirstSearch from "./breadth_first_search/breadth_first";
 function App() {
   const [pageOne, onChangePageOne] = React.useState("");
   const [pageTwo, onChangePageTwo] = React.useState("");
@@ -21,7 +21,13 @@ function App() {
           value={pageTwo}
           onChange={(e) => onChangePageTwo(e.target.value)}
         ></input>
-        <button>Search!</button>
+        <button
+          onClick={() => {
+            breadthFirstSearch(pageOne, pageTwo);
+          }}
+        >
+          Search!
+        </button>
       </header>
     </div>
   );
