@@ -6,6 +6,5 @@ This app finds the shortest path from one wikipedia page to another through link
 To start, download the repository from github. In the repository, install the dependencies with
 - npm install
 
-After that, run 
+After that, start the server with 
 - npm start
-To start the server
