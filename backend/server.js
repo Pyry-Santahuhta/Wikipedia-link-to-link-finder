@@ -3,22 +3,16 @@
 const express = require("express");
 const cluster = require("cluster");
 const { cpus } = require("os");
-const port = 3000;
-
+const fetch = require("node-fetch");
+const port = 3001;
 if (cluster.isPrimary) {
-  console.log(`Number of CPUs is ${totalCPUs}`);
-  console.log(`Master ${process.pid} is running`);
-
   // Start workers and listen for messages containing notifyRequest
   const numCPUs = cpus().length;
+  console.log(`Number of CPUs is ${numCPUs}`);
+  console.log(`Master ${process.pid} is running`);
   for (let i = 0; i < numCPUs; i++) {
     cluster.fork();
   }
-  // Keep track of http requests
-  let numReqs = 0;
-  setInterval(() => {
-    console.log(`numReqs = ${numReqs}`);
-  }, 1000);
 
   // Count requests
   function messageHandler(msg) {
@@ -27,36 +21,67 @@ if (cluster.isPrimary) {
     }
   }
 
-  for (const id in cluster.workers) {
-    cluster.workers[id].on("message", messageHandler);
-  }
+  const app = express();
+
+  app.get("/", (req, res) => {
+    res.send("Hello World!");
+  });
+  app.get("/api/:pageone/:pagetwo", async function (req, res) {
+    //Get the links of the first page the user gave
+    const links = await queryWikipediaAPI(req.params.pageone);
+
+    //Split the list of links to chunks for the workers to handle
+    const workerChunks = [];
+    for (let i = numCPUs; i > 0; i--) {
+      workerChunks.push(links.splice(0, Math.ceil(links.length / i)));
+    }
+  });
+  app.listen(port, () => {
+    console.log(`App listening on port ${port}`);
+  });
+} else {
+  console.log(`Worker ${process.pid} started`);
+
   cluster.on("exit", (worker, code, signal) => {
     console.log(`worker ${worker.process.pid} died`);
     console.log("Let's fork another worker!");
     cluster.fork();
   });
-} else {
-  const app = express();
-  console.log(`Worker ${process.pid} started`);
+}
 
-  app.get("/", (req, res) => {
-    res.send("Hello World!");
-  });
-
-  app.get("/api/:n", function (req, res) {
-    let n = parseInt(req.params.n);
-    let count = 0;
-
-    if (n > 5000000000) n = 5000000000;
-
-    for (let i = 0; i <= n; i++) {
-      count += i;
+async function breadthFirstSearch(currentNode, searchValue) {
+  let queue = [];
+  let pages = await queryWikipediaAPI(currentNode);
+  for (var page in pages) {
+    for (var link of pages[page].links) {
+      if (searchValue === link.title) {
+        console.log("found the fokker");
+      } else {
+        breadthFirstSearch(link.title, searchValue);
+      }
     }
+  }
+  queue.push(currentNode);
+  /*while (queue.length > 0) {
+    let currentNode = queue[0];
+  }*/
+}
 
-    res.send(`Final count is ${count}`);
+async function queryWikipediaAPI(searchTerm) {
+  let url = new URL(
+    "http://en.wikipedia.org/w/api.php?origin=*&action=query&titles=" +
+      searchTerm +
+      "&format=json&prop=links&pllimit=400"
+  );
+  const response = await fetch(url, {
+    method: "GET",
   });
-
-  app.listen(port, () => {
-    console.log(`App listening on port ${port}`);
-  });
+  const data = await response.json();
+  if (data.query.pages) {
+    for (page in data.query.pages) {
+      return data.query.pages[page].links;
+    }
+  } else {
+    return null;
+  }
 }

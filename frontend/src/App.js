@@ -1,6 +1,5 @@
 import React from "react";
 import "./App.css";
-import breadthFirstSearch from "./breadth_first_search/breadth_first";
 function App() {
   const [pageOne, onChangePageOne] = React.useState("");
   const [pageTwo, onChangePageTwo] = React.useState("");
@@ -25,7 +24,7 @@ function App() {
           onClick={() => {
             let url = "/api/" + pageOne + "/" + pageTwo;
             console.log(url);
-            await fetch(url);
+            const result = fetch(url);
           }}
         >
           Search!

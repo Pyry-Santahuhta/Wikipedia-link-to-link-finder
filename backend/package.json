@@ -1,0 +1,18 @@
+{
+  "name": "wikipedia-links-backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server",
+    "dev": "nodemon server"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.17.3",
+    "node-fetch": "^2.6.7",
+    "nodemon": "^2.0.15",
+    "process": "^0.11.10"
+  }
+}
