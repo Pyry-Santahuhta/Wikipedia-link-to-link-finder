@@ -38,14 +38,22 @@ if (cluster.isPrimary) {
     //Get the links of the first page the user gave
     const links = await queryWikipediaAPI(req.params.pageone);
 
+    //Solve the trivial case of the pages being linked
+    for (let i = 0; i < links.length; i++) {
+      if (links[i].title.toUpperCase() == req.params.pagetwo.toUpperCase()) {
+        console.log(links[i].title);
+        res.send("From " + req.params.pageone + " to " + links[i].title);
+      }
+    }
+
     //Split the list of links to chunks for the workers to handle
     const workerChunks = [];
     for (let i = numCPUs; i > 0; i--) {
       workerChunks.push(links.splice(0, Math.ceil(links.length / i)));
     }
-
     //Send a chunk of the links to each worker
     for (const id in cluster.workers) {
+      cluster.workers[id].send({ searchValue: req.params.pagetwo });
       cluster.workers[id].send({ list: workerChunks[id - 1] });
       worker = cluster.workers[id];
     }
@@ -61,9 +69,11 @@ if (cluster.isPrimary) {
   console.log(`Worker ${process.pid} started`);
 
   process.on("message", function messageFromMaster(msg) {
-    console.log(msg);
-    if (msg.cmd && msg.cmd === "notifyRequest") {
-      numReqs += 1;
+    if (msg.searchValue) {
+      var searchValue = msg.searchValue;
+    }
+    if (msg.list) {
+      breadthFirstSearch(msg.list, searchValue);
     }
   });
 
@@ -74,11 +84,28 @@ if (cluster.isPrimary) {
   });
 }
 
-async function breadthFirstSearch(currentNode, searchValue) {
+async function breadthFirstSearch(startValues, searchValue) {
   let queue = [];
+  let visitedNodes = [];
 
+  for (let i = 0; i < startValues.length; i++) {
+    queue.push(startValues[i].title);
+    visitedNodes[startValues[i]] = true;
+  }
   while (queue.length > 0) {
-    let currentNode = queue[0];
+    var currentNode = queue.shift();
+    console.log(currentNode);
+    let currentLinks = await queryWikipediaAPI(currentNode);
+    for (let i = 0; i < currentLinks; i++) {
+      if (currentLinks[i] && !visitedNodes[i]) {
+        if (currentLinks[i] === searchValue) {
+          console.log("WOHHOOO", currentLinks[i]);
+          break;
+        }
+        visitedNodes[i] = true;
+        queue.push(i);
+      }
+    }
   }
 }
 
@@ -91,6 +118,10 @@ async function queryWikipediaAPI(searchTerm) {
   const response = await fetch(url, {
     method: "GET",
   });
+  if (response.status !== 200) {
+    console.log("Something went wrong bro");
+    return response.status;
+  }
   const data = await response.json();
   if (data.query.pages) {
     for (page in data.query.pages) {
