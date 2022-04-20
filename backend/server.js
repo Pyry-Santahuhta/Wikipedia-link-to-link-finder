@@ -10,15 +10,27 @@ const port = 3001;
 if (cluster.isPrimary) {
   // Start workers and listen for messages containing notifyRequest
   const numCPUs = cpus().length;
+
   console.log(`Number of CPUs is ${numCPUs}`);
   console.log(`Master ${process.pid} is running`);
 
   // Receive messages from workers
   function messageFromWorker(msg) {
     console.log(msg);
-    if (msg.cmd && msg.cmd === "notifyRequest") {
-      numReqs += 1;
+    if (msg.foundResult) {
+      console.log(
+        "\n**************************************\n" +
+          msg.foundResult +
+          "***************************************************\n"
+      );
+      for (var id in cluster.workers) {
+        cluster.workers[id].kill();
+      }
     }
+    endTime = new Date();
+    var timeDiff = endTime - startTime; //in ms
+    timeDiff /= 1000;
+    console.log("Time: " + timeDiff);
   }
 
   //Fork as many workers as there are cores
@@ -37,7 +49,7 @@ if (cluster.isPrimary) {
   app.get("/api/:pageone/:pagetwo", async function (req, res) {
     //Get the links of the first page the user gave
     const links = await queryWikipediaAPI(req.params.pageone);
-
+    startTime = new Date();
     //Solve the trivial case of the pages being linked
     for (let i = 0; i < links.length; i++) {
       if (links[i].title.toUpperCase() == req.params.pagetwo.toUpperCase()) {
@@ -53,8 +65,10 @@ if (cluster.isPrimary) {
     }
     //Send a chunk of the links to each worker
     for (const id in cluster.workers) {
-      cluster.workers[id].send({ searchValue: req.params.pagetwo });
-      cluster.workers[id].send({ list: workerChunks[id - 1] });
+      cluster.workers[id].send({
+        searchValue: req.params.pagetwo,
+        list: workerChunks[id - 1],
+      });
       worker = cluster.workers[id];
     }
   });
@@ -69,10 +83,8 @@ if (cluster.isPrimary) {
   console.log(`Worker ${process.pid} started`);
 
   process.on("message", function messageFromMaster(msg) {
-    if (msg.searchValue) {
+    if (msg.searchValue && msg.list) {
       var searchValue = msg.searchValue;
-    }
-    if (msg.list) {
       breadthFirstSearch(msg.list, searchValue);
     }
   });
@@ -84,27 +96,38 @@ if (cluster.isPrimary) {
   });
 }
 
-async function breadthFirstSearch(startValues, searchValue) {
-  let queue = [];
+async function breadthFirstSearch(startLinks, searchValue) {
+  var queue = [];
   let visitedNodes = [];
-
-  for (let i = 0; i < startValues.length; i++) {
-    queue.push(startValues[i].title);
-    visitedNodes[startValues[i]] = true;
+  var currentLinks = [];
+  var depth = 0;
+  for (let i = 0; i < startLinks.length; i++) {
+    queue.push(startLinks[i].title);
+    visitedNodes[startLinks[i]] = true;
   }
-  while (queue.length > 0) {
+  for (let i = 0; i < queue.length; i++) {
     var currentNode = queue.shift();
-    console.log(currentNode);
-    let currentLinks = await queryWikipediaAPI(currentNode);
-    for (let i = 0; i < currentLinks; i++) {
-      if (currentLinks[i] && !visitedNodes[i]) {
-        if (currentLinks[i] === searchValue) {
-          console.log("WOHHOOO", currentLinks[i]);
-          break;
-        }
-        visitedNodes[i] = true;
-        queue.push(i);
+    if (queue[i] && !visitedNodes[currentNode]) {
+      currentLinks = await queryWikipediaAPI(currentNode);
+      if (currentLinks === -1) {
+        console.log("Something went wrong while querying the API");
+        return -1;
       }
+
+      if (currentLinks) {
+        for (let i = 0; i < currentLinks.length; i++) {
+          if (
+            currentLinks[i].title.toUpperCase() === searchValue.toUpperCase()
+          ) {
+            console.log("WOHHOOO", currentLinks[i].title, depth);
+            process.send({ foundResult: currentLinks[i].title });
+            return currentLinks[i];
+          }
+          depth += 1;
+          queue.push(i);
+        }
+      }
+      visitedNodes[currentNode] = true;
     }
   }
 }
@@ -113,14 +136,16 @@ async function queryWikipediaAPI(searchTerm) {
   let url = new URL(
     "http://en.wikipedia.org/w/api.php?origin=*&action=query&titles=" +
       searchTerm +
-      "&format=json&prop=links&pllimit=400"
+      "&format=json&prop=links&pllimit=500"
   );
   const response = await fetch(url, {
     method: "GET",
+    headers: { "User-Agent": "MY-UA-STRING" },
   });
   if (response.status !== 200) {
-    console.log("Something went wrong bro");
-    return response.status;
+    console.log(response);
+    console.log("Something went wrong bro, status code " + response.status);
+    return -1;
   }
   const data = await response.json();
   if (data.query.pages) {
@@ -128,6 +153,6 @@ async function queryWikipediaAPI(searchTerm) {
       return data.query.pages[page].links;
     }
   } else {
-    return null;
+    return -1;
   }
 }
