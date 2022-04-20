@@ -48,6 +48,7 @@ if (cluster.isPrimary) {
   //
   app.get("/api/:pageone/:pagetwo", async function (req, res) {
     //Get the links of the first page the user gave
+    console.log("Starting search to " + req.params.pagetwo + "...");
     const links = await queryWikipediaAPI(req.params.pageone);
     startTime = new Date();
     //Solve the trivial case of the pages being linked
@@ -102,8 +103,7 @@ async function breadthFirstSearch(startLinks, searchValue) {
   var currentLinks = [];
   var depth = 0;
   for (let i = 0; i < startLinks.length; i++) {
-    queue.push(startLinks[i].title);
-    visitedNodes[startLinks[i]] = true;
+    queue.push(startLinks[i].title.toString());
   }
   for (let i = 0; i < queue.length; i++) {
     var currentNode = queue.shift();
@@ -115,7 +115,7 @@ async function breadthFirstSearch(startLinks, searchValue) {
       }
 
       if (currentLinks) {
-        for (let i = 0; i < currentLinks.length; i++) {
+        for (let i = 1; i < currentLinks.length; i++) {
           if (
             currentLinks[i].title.toUpperCase() === searchValue.toUpperCase()
           ) {
@@ -125,9 +125,10 @@ async function breadthFirstSearch(startLinks, searchValue) {
           }
           depth += 1;
           queue.push(i);
+          console.log(currentNode);
+          visitedNodes[currentNode.toUpperCase()] = true;
         }
       }
-      visitedNodes[currentNode] = true;
     }
   }
 }
