@@ -10,7 +10,7 @@ const port = 3001;
 if (cluster.isPrimary) {
   // Start workers and listen for messages containing notifyRequest
   const numCPUs = cpus().length;
-
+  //;
   console.log(`Number of CPUs is ${numCPUs}`);
   console.log(`Master ${process.pid} is running`);
 
@@ -19,9 +19,9 @@ if (cluster.isPrimary) {
     console.log(msg);
     if (msg.foundResult) {
       console.log(
-        "\n**************************************\n" +
+        "\n***************************************************\n" +
           msg.foundResult +
-          "***************************************************\n"
+          "\n***************************************************\n"
       );
       for (var id in cluster.workers) {
         cluster.workers[id].kill();
@@ -33,12 +33,6 @@ if (cluster.isPrimary) {
     console.log("Time: " + timeDiff);
   }
 
-  //Fork as many workers as there are cores
-  for (let i = 0; i < numCPUs; i++) {
-    worker = cluster.fork();
-    worker.on("message", messageFromWorker);
-  }
-
   const app = express();
 
   app.get("/", (req, res) => {
@@ -47,15 +41,20 @@ if (cluster.isPrimary) {
 
   //
   app.get("/api/:pageone/:pagetwo", async function (req, res) {
+    //Fork as many workers as there are cores
+    for (let i = 0; i < numCPUs; i++) {
+      worker = cluster.fork();
+      worker.on("message", messageFromWorker);
+    }
     //Get the links of the first page the user gave
     console.log("Starting search to " + req.params.pagetwo + "...");
-    const links = await queryWikipediaAPI(req.params.pageone);
+    const links = await fetchLinks(req.params.pageone);
     startTime = new Date();
     //Solve the trivial case of the pages being linked
     for (let i = 0; i < links.length; i++) {
-      if (links[i].title.toUpperCase() == req.params.pagetwo.toUpperCase()) {
-        console.log(links[i].title);
-        res.send("From " + req.params.pageone + " to " + links[i].title);
+      if (links[i].toUpperCase() == req.params.pagetwo.toUpperCase()) {
+        console.log(links[i]);
+        res.send("From " + req.params.pageone + " to " + links[i]);
       }
     }
 
@@ -98,47 +97,46 @@ if (cluster.isPrimary) {
 }
 
 async function breadthFirstSearch(startLinks, searchValue) {
+  //A Queue to manage the nodes that have yet to be visited
   var queue = [];
-  let visitedNodes = [];
-  var currentLinks = [];
-  var depth = 0;
-  for (let i = 0; i < startLinks.length; i++) {
-    queue.push(startLinks[i].title.toString());
-  }
-  for (let i = 0; i < queue.length; i++) {
-    var currentNode = queue.shift();
-    if (queue[i] && !visitedNodes[currentNode]) {
-      currentLinks = await queryWikipediaAPI(currentNode);
-      if (currentLinks === -1) {
-        console.log("Something went wrong while querying the API");
-        return -1;
-      }
+  //A boolean array indicating whether we have already visited a node
+  var visited = [];
+  //(The start node is already visited)
+  // Keeping the distances (might not be necessary depending on your use case)
 
-      if (currentLinks) {
-        for (let i = 1; i < currentLinks.length; i++) {
-          if (
-            currentLinks[i].title.toUpperCase() === searchValue.toUpperCase()
-          ) {
-            console.log("WOHHOOO", currentLinks[i].title, depth);
-            process.send({ foundResult: currentLinks[i].title });
-            return currentLinks[i];
+  //Adding the node to start from
+  for (let i = 0; i < startLinks.length; i++) {
+    queue.push(startLinks[i].toString());
+    visited[startLinks[i].toString()] = true;
+  }
+  //(the distance to the start node is 0)
+  //While there are nodes left to visit...
+  while (queue.length > 0) {
+    var node = queue.shift();
+    //...for all neighboring nodes that haven't been visited yet....
+    var currentLinks = await fetchLinks(node);
+    if (currentLinks) {
+      for (var i = 1; i < currentLinks.length; i++) {
+        var currentLink = currentLinks[i];
+        if (!visited[currentLink]) {
+          if (currentLink.toUpperCase() === searchValue.toUpperCase()) {
+            console.log("WOHHOOO", currentLink);
+            process.send({ foundResult: currentLink });
+            return currentLink;
           }
-          depth += 1;
-          queue.push(i);
-          console.log(currentNode);
-          visitedNodes[currentNode.toUpperCase()] = true;
+          // Do whatever you want to do with the node here.
+          // Visit it, set the distance and add it to the queue
+          visited[currentLink] = true;
+          queue.push(currentLink);
         }
       }
     }
   }
+  console.log("No more links in queue, exiting");
+  return 0;
 }
 
-async function queryWikipediaAPI(searchTerm) {
-  let url = new URL(
-    "http://en.wikipedia.org/w/api.php?origin=*&action=query&titles=" +
-      searchTerm +
-      "&format=json&prop=links&pllimit=500"
-  );
+async function queryWikipediaAPI(url) {
   const response = await fetch(url, {
     method: "GET",
     headers: { "User-Agent": "MY-UA-STRING" },
@@ -149,10 +147,40 @@ async function queryWikipediaAPI(searchTerm) {
     return -1;
   }
   const data = await response.json();
+  return data;
+}
+
+async function fetchLinks(searchTerm) {
+  let url = new URL(
+    "http://en.wikipedia.org/w/api.php?origin=*&action=query&titles=" +
+      searchTerm +
+      "&format=json&prop=links&pllimit=max"
+  );
+
+  var data = await queryWikipediaAPI(url);
+  var resultLinks = [];
   if (data.query.pages) {
-    for (page in data.query.pages) {
-      return data.query.pages[page].links;
+    pages = data.query.pages;
+    for (page in pages) {
+      for (link in pages[page].links) {
+        if (pages[page].links[link].ns == 0) {
+          resultLinks.push(pages[page].links[link].title);
+        }
+      }
     }
+    if (data.continue) {
+      url += "&plcontinue=" + data["continue"]["plcontinue"];
+      var data = await queryWikipediaAPI(url);
+      pages = data.query.pages;
+      for (page in pages) {
+        for (link in pages[page].links) {
+          if (pages[page].links[link].ns == 0) {
+            resultLinks.push(pages[page].links[link].title);
+          }
+        }
+      }
+    }
+    return resultLinks;
   } else {
     return -1;
   }
