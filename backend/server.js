@@ -41,11 +41,6 @@ if (cluster.isPrimary) {
 
   //
   app.get("/api/:pageone/:pagetwo", async function (req, res) {
-    //Fork as many workers as there are cores
-    for (let i = 0; i < numCPUs; i++) {
-      worker = cluster.fork();
-      worker.on("message", messageFromWorker);
-    }
     //Get the links of the first page the user gave
     console.log("Starting search to " + req.params.pagetwo + "...");
     const links = await fetchLinks(req.params.pageone);
@@ -54,8 +49,19 @@ if (cluster.isPrimary) {
     for (let i = 0; i < links.length; i++) {
       if (links[i].toUpperCase() == req.params.pagetwo.toUpperCase()) {
         console.log(links[i]);
+        endTime = new Date();
+        var timeDiff = endTime - startTime; //in ms
+        timeDiff /= 1000;
+        console.log("Time: " + timeDiff);
         res.send("From " + req.params.pageone + " to " + links[i]);
+        return;
       }
+    }
+
+    //Fork as many workers as there are cores
+    for (let i = 0; i < numCPUs; i++) {
+      worker = cluster.fork();
+      worker.on("message", messageFromWorker);
     }
 
     //Split the list of links to chunks for the workers to handle
@@ -69,7 +75,6 @@ if (cluster.isPrimary) {
         searchValue: req.params.pagetwo,
         list: workerChunks[id - 1],
       });
-      worker = cluster.workers[id];
     }
   });
 
@@ -103,29 +108,25 @@ async function breadthFirstSearch(startLinks, searchValue) {
   var visited = [];
   //(The start node is already visited)
   // Keeping the distances (might not be necessary depending on your use case)
-
-  //Adding the node to start from
+  //Adding the nodes to start from
   for (let i = 0; i < startLinks.length; i++) {
-    queue.push(startLinks[i].toString());
-    visited[startLinks[i].toString()] = true;
+    queue.push(startLinks[i]);
+    visited[startLinks[i]] = true;
   }
-  //(the distance to the start node is 0)
   //While there are nodes left to visit...
   while (queue.length > 0) {
     var node = queue.shift();
-    //...for all neighboring nodes that haven't been visited yet....
+
     var currentLinks = await fetchLinks(node);
     if (currentLinks) {
-      for (var i = 1; i < currentLinks.length; i++) {
-        var currentLink = currentLinks[i];
+      for (const currentLink of currentLinks) {
+        if (currentLink.toUpperCase() === searchValue.toUpperCase()) {
+          console.log("WOHHOOO", currentLink);
+          process.send({ foundResult: currentLink });
+          return currentLink;
+        }
+
         if (!visited[currentLink]) {
-          if (currentLink.toUpperCase() === searchValue.toUpperCase()) {
-            console.log("WOHHOOO", currentLink);
-            process.send({ foundResult: currentLink });
-            return currentLink;
-          }
-          // Do whatever you want to do with the node here.
-          // Visit it, set the distance and add it to the queue
           visited[currentLink] = true;
           queue.push(currentLink);
         }
@@ -146,8 +147,7 @@ async function queryWikipediaAPI(url) {
     console.log("Something went wrong bro, status code " + response.status);
     return -1;
   }
-  const data = await response.json();
-  return data;
+  return await response.json();
 }
 
 async function fetchLinks(searchTerm) {
@@ -160,28 +160,30 @@ async function fetchLinks(searchTerm) {
   var data = await queryWikipediaAPI(url);
   var resultLinks = [];
   if (data.query.pages) {
-    pages = data.query.pages;
-    for (page in pages) {
-      for (link in pages[page].links) {
-        if (pages[page].links[link].ns == 0) {
-          resultLinks.push(pages[page].links[link].title);
+    const links = Object.values(data.query.pages)[0].links;
+    if (links instanceof Array) {
+      for (const link of links) {
+        if (link.ns == 0) {
+          resultLinks.push(link.title);
         }
       }
     }
     if (data.continue) {
       url += "&plcontinue=" + data["continue"]["plcontinue"];
       var data = await queryWikipediaAPI(url);
-      pages = data.query.pages;
-      for (page in pages) {
-        for (link in pages[page].links) {
-          if (pages[page].links[link].ns == 0) {
-            resultLinks.push(pages[page].links[link].title);
+      var resultLinks = [];
+      if (data.query.pages) {
+        const links = Object.values(data.query.pages)[0].links;
+        if (links instanceof Array) {
+          for (const link of links) {
+            if (link.ns == 0) {
+              resultLinks.push(link.title);
+            }
           }
         }
       }
     }
     return resultLinks;
-  } else {
-    return -1;
   }
+  return -1;
 }
