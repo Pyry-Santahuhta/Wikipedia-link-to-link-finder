@@ -14,25 +14,6 @@ if (cluster.isPrimary) {
   console.log(`Number of CPUs is ${numCPUs}`);
   console.log(`Master ${process.pid} is running`);
 
-  // Receive messages from workers
-  function messageFromWorker(msg) {
-    console.log(msg);
-    if (msg.foundResult) {
-      console.log(
-        "\n***************************************************\n" +
-          msg.foundResult +
-          "\n***************************************************\n"
-      );
-      for (var id in cluster.workers) {
-        cluster.workers[id].kill();
-      }
-    }
-    endTime = new Date();
-    var timeDiff = endTime - startTime; //in ms
-    timeDiff /= 1000;
-    console.log("Time: " + timeDiff);
-  }
-
   const app = express();
 
   app.get("/", (req, res) => {
@@ -48,33 +29,51 @@ if (cluster.isPrimary) {
     //Solve the trivial case of the pages being linked
     for (let i = 0; i < links.length; i++) {
       if (links[i].toUpperCase() == req.params.pagetwo.toUpperCase()) {
-        console.log(links[i]);
         endTime = new Date();
         var timeDiff = endTime - startTime; //in ms
         timeDiff /= 1000;
-        console.log("Time: " + timeDiff);
-        res.send("From " + req.params.pageone + " to " + links[i]);
+        res.send({
+          result: links[i],
+          time: timeDiff,
+          lastLink: req.params.pageone,
+        });
         return;
       }
     }
-
+    // Receive messages from workers
+    function messageFromWorker(msg) {
+      if (msg.foundResult) {
+        endTime = new Date();
+        let timeDiff = endTime - startTime; //in ms
+        timeDiff /= 1000;
+        res.send({
+          result: msg.foundResult,
+          time: timeDiff,
+          lastLink: msg.lastLink,
+        });
+        for (let id in cluster.workers) {
+          cluster.workers[id].kill();
+        }
+      }
+    }
     //Fork as many workers as there are cores
     for (let i = 0; i < numCPUs; i++) {
       worker = cluster.fork();
       worker.on("message", messageFromWorker);
     }
-
     //Split the list of links to chunks for the workers to handle
     const workerChunks = [];
     for (let i = numCPUs; i > 0; i--) {
       workerChunks.push(links.splice(0, Math.ceil(links.length / i)));
     }
-    //Send a chunk of the links to each worker
+    //Send a chunk of the links and the searchterm to each worker
+    let i = 0;
     for (const id in cluster.workers) {
       cluster.workers[id].send({
         searchValue: req.params.pagetwo,
-        list: workerChunks[id - 1],
+        list: workerChunks[i],
       });
+      i += 1;
     }
   });
 
@@ -121,11 +120,9 @@ async function breadthFirstSearch(startLinks, searchValue) {
     if (currentLinks) {
       for (const currentLink of currentLinks) {
         if (currentLink.toUpperCase() === searchValue.toUpperCase()) {
-          console.log("WOHHOOO", currentLink);
-          process.send({ foundResult: currentLink });
+          process.send({ foundResult: currentLink, lastLink: node });
           return currentLink;
         }
-
         if (!visited[currentLink]) {
           visited[currentLink] = true;
           queue.push(currentLink);
@@ -134,18 +131,21 @@ async function breadthFirstSearch(startLinks, searchValue) {
     }
   }
   console.log("No more links in queue, exiting");
+  process.kill;
   return 0;
 }
 
 async function queryWikipediaAPI(url) {
   const response = await fetch(url, {
     method: "GET",
-    headers: { "User-Agent": "MY-UA-STRING" },
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:47.0) Gecko/20100101 Firefox/47.0",
+    },
   });
   if (response.status !== 200) {
-    console.log(response);
     console.log("Something went wrong bro, status code " + response.status);
-    return -1;
+    return null;
   }
   return await response.json();
 }
