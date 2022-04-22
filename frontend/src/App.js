@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import "./App.css";
 import Form from "./components/form";
 import Waiting from "./components/waiting";
@@ -11,12 +11,15 @@ function App() {
     setResult(result);
   };
 
+  //Render different elements depending on result status
   let renderElement = () => {
     if (!result) {
       return <Waiting />;
     } else if (result.result) {
+      //Send resultchange and result as props
       return <Result retry={handleResultChange} result={result} />;
     } else {
+      //Send resultchange and result as props
       return <Form onResultChange={handleResultChange} result={result} />;
     }
   };

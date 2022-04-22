@@ -1,9 +1,9 @@
-import React, { useState } from "react";
+import React from "react";
 
 export const Form = (props) => {
   const [pageOne, onChangePageOne] = React.useState("");
   const [pageTwo, onChangePageTwo] = React.useState("");
-  let [result, setResult] = React.useState();
+  let [result] = React.useState();
   return (
     <div>
       <p>From</p>
@@ -24,8 +24,14 @@ export const Form = (props) => {
           if (pageOne && pageTwo) {
             let url = "/api/" + pageOne + "/" + pageTwo;
             props.onResultChange(false);
+            //Fetch from backend API
             let data = await fetch(url);
             result = await data.json();
+            //If no results were found, return to main page by setting result as empty JSON
+            if (result.notFound) {
+              props.onResultChange({});
+            }
+            //Set the result state
             props.onResultChange(result);
           }
         }}
