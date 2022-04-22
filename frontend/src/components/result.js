@@ -4,8 +4,8 @@ export const Result = (props) => {
   return (
     <div>
       <p>
-        Found {props.result.result} in {props.result.time} seconds, it was found
-        from {props.result.lastLink}
+        Starting from {props.result.start}, found {props.result.result} in{" "}
+        {props.result.time} seconds, it was found from {props.result.lastLink}
       </p>
       <button
         onClick={() => {

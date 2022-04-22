@@ -10,29 +10,28 @@ const port = 3001;
 if (cluster.isPrimary) {
   // Start workers and listen for messages containing notifyRequest
   const numCPUs = cpus().length;
-  //;
   console.log(`Number of CPUs is ${numCPUs}`);
   console.log(`Master ${process.pid} is running`);
 
   const app = express();
 
-  app.get("/", (req, res) => {
-    res.send("Hello World!");
-  });
-
-  //
   app.get("/api/:pageone/:pagetwo", async function (req, res) {
-    //Get the links of the first page the user gave
     console.log("Starting search to " + req.params.pagetwo + "...");
+    //Get the links of the first page the user gave
     const links = await fetchLinks(req.params.pageone);
+    //Start the timer
     startTime = new Date();
     //Solve the trivial case of the pages being linked
     for (let i = 0; i < links.length; i++) {
       if (links[i].toUpperCase() == req.params.pagetwo.toUpperCase()) {
+        //stop the timer
         endTime = new Date();
         var timeDiff = endTime - startTime; //in ms
         timeDiff /= 1000;
+        //Respond with the result and time and the link it was found from
+
         res.send({
+          start: req.params.pageone,
           result: links[i],
           time: timeDiff,
           lastLink: req.params.pageone,
@@ -46,14 +45,15 @@ if (cluster.isPrimary) {
         endTime = new Date();
         let timeDiff = endTime - startTime; //in ms
         timeDiff /= 1000;
+        for (let id in cluster.workers) {
+          cluster.workers[id].kill();
+        }
         res.send({
+          start: req.params.pageone,
           result: msg.foundResult,
           time: timeDiff,
           lastLink: msg.lastLink,
         });
-        for (let id in cluster.workers) {
-          cluster.workers[id].kill();
-        }
       }
     }
     //Fork as many workers as there are cores
@@ -62,6 +62,8 @@ if (cluster.isPrimary) {
       worker.on("message", messageFromWorker);
     }
     //Split the list of links to chunks for the workers to handle
+    //Inspiration for splitting array
+    //https://stackoverflow.com/questions/8188548/splitting-a-js-array-into-n-arrays/51514813#51514813
     const workerChunks = [];
     for (let i = numCPUs; i > 0; i--) {
       workerChunks.push(links.splice(0, Math.ceil(links.length / i)));
@@ -100,12 +102,13 @@ if (cluster.isPrimary) {
   });
 }
 
+//BFS inspiration:
+//https://www.algorithms-and-technologies.com/bfs/javascript
 async function breadthFirstSearch(startLinks, searchValue) {
   //A Queue to manage the nodes that have yet to be visited
   var queue = [];
   //A boolean array indicating whether we have already visited a node
   var visited = [];
-  //(The start node is already visited)
   // Keeping the distances (might not be necessary depending on your use case)
   //Adding the nodes to start from
   for (let i = 0; i < startLinks.length; i++) {
@@ -130,8 +133,8 @@ async function breadthFirstSearch(startLinks, searchValue) {
       }
     }
   }
-  console.log("No more links in queue, exiting");
-  process.kill;
+  console.log("No more links in queue, exiting process: " + process.pid);
+  process.kill(process.pid);
   return 0;
 }
 
@@ -159,6 +162,9 @@ async function fetchLinks(searchTerm) {
 
   var data = await queryWikipediaAPI(url);
   var resultLinks = [];
+  if (!data) {
+    return -1;
+  }
   if (data.query.pages) {
     const links = Object.values(data.query.pages)[0].links;
     if (links instanceof Array) {
@@ -168,10 +174,9 @@ async function fetchLinks(searchTerm) {
         }
       }
     }
-    if (data.continue) {
-      url += "&plcontinue=" + data["continue"]["plcontinue"];
+    while (data.continue) {
+      url += "&plcontinue=" + data.continue.plcontinue;
       var data = await queryWikipediaAPI(url);
-      var resultLinks = [];
       if (data.query.pages) {
         const links = Object.values(data.query.pages)[0].links;
         if (links instanceof Array) {
@@ -183,6 +188,7 @@ async function fetchLinks(searchTerm) {
         }
       }
     }
+
     return resultLinks;
   }
   return -1;

@@ -14,7 +14,7 @@ function App() {
   let renderElement = () => {
     if (!result) {
       return <Waiting />;
-    } else if (result.time) {
+    } else if (result.result) {
       return <Result retry={handleResultChange} result={result} />;
     } else {
       return <Form onResultChange={handleResultChange} result={result} />;
